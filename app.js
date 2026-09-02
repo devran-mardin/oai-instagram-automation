@@ -150,7 +150,7 @@ document.addEventListener("DOMContentLoaded", () => {
     chatBody.scrollTop = chatBody.scrollHeight;
   }
 
-  function handleSend(messageText) {
+  async function handleSend(messageText) {
     if (!messageText.trim()) return;
 
     // Kullanıcı Mesajı
@@ -161,9 +161,30 @@ document.addEventListener("DOMContentLoaded", () => {
     const typingDiv = document.createElement("div");
     typingDiv.className = "chat-msg bot";
     typingDiv.id = "typingIndicator";
-    typingDiv.innerHTML = `<div class="msg-bubble" style="font-style:italic;color:#94a3b8;">@otomasyon_ai web sitesinden bilgi çekiyor...</div>`;
+    typingDiv.innerHTML = `<div class="msg-bubble" style="font-style:italic;color:#94a3b8;">@otomasyon_ai yapay zeka düşünüyor...</div>`;
     chatBody.appendChild(typingDiv);
     chatBody.scrollTop = chatBody.scrollHeight;
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: messageText })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const indicator = document.getElementById("typingIndicator");
+        if (indicator) indicator.remove();
+
+        let formatted = data.reply
+          .replace(/\n/g, "<br>")
+          .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" class="chat-cta-btn" style="display:inline-block;margin-top:6px;">WhatsApp Bağlantısı ➔</a>');
+        appendMessage("bot", formatted);
+        return;
+      }
+    } catch (e) {
+      console.log("Sunucu bağlantısı yok, yerel kural motoruna geçiliyor:", e);
+    }
 
     setTimeout(() => {
       const indicator = document.getElementById("typingIndicator");
@@ -171,7 +192,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const reply = answerQueryFromWebsite(messageText);
       appendMessage("bot", reply);
-    }, 900);
+    }, 600);
   }
 
   chatForm.addEventListener("submit", (e) => {
