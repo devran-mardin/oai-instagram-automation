@@ -137,6 +137,15 @@ document.addEventListener("DOMContentLoaded", () => {
            `<a href="${kb.brand.whatsappLink}?text=Merhaba,%20${encodeURIComponent(query)}%20hakkında%20bilgi%20almak%20istiyorum." target="_blank" class="chat-cta-btn">WhatsApp'tan Uzmanımızla Görüşün ➔</a>`;
   }
 
+  // Kullanıcının yazdığı metin veya AI/sunucu yanıtı innerHTML olarak basılmadan önce
+  // HTML özel karakterlerini kaçırır (self-XSS koruması: "<script>" gibi bir metin
+  // yazılıp gönderildiğinde tarayıcıda çalıştırılmasını engeller).
+  function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
   function appendMessage(sender, htmlContent) {
     const msgDiv = document.createElement("div");
     msgDiv.className = `chat-msg ${sender}`;
@@ -154,7 +163,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!messageText.trim()) return;
 
     // Kullanıcı Mesajı
-    appendMessage("user", messageText);
+    appendMessage("user", escapeHtml(messageText));
     chatInput.value = "";
 
     // Doğal yazıyor efekti
@@ -176,7 +185,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const indicator = document.getElementById("typingIndicator");
         if (indicator) indicator.remove();
 
-        let formatted = data.reply
+        let formatted = escapeHtml(data.reply)
           .replace(/\n/g, "<br>")
           .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" class="chat-cta-btn" style="display:inline-block;margin-top:6px;">WhatsApp Bağlantısı ➔</a>');
         appendMessage("bot", formatted);

@@ -7,12 +7,27 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
+const crypto = require("crypto");
+const rateLimit = require("express-rate-limit");
 const websiteKnowledge = require("./websiteKnowledge");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "otomasyon_ai_secure_webhook_token_2026";
+
+// VERIFY_TOKEN mutlaka .env / Railway ortam değişkeninden gelmeli.
+// Kaynak kodun içine bilinen sabit bir jeton gömmek güvenlik riski oluşturur;
+// tanımlı değilse rastgele bir jeton üretip uyarı basıyoruz (Meta doğrulaması
+// bu durumda .env'e gerçek değeri girene kadar başarısız olur).
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN || crypto.randomBytes(16).toString("hex");
+if (!process.env.VERIFY_TOKEN) {
+  console.warn("[UYARI] VERIFY_TOKEN ortam değişkeni tanımlı değil, geçici rastgele bir jeton kullanılıyor. .env dosyasına VERIFY_TOKEN ekleyin.");
+}
+
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN || "";
+const META_APP_SECRET = process.env.META_APP_SECRET || "";
+if (!META_APP_SECRET) {
+  console.warn("[UYARI] META_APP_SECRET tanımlı değil, gelen webhook isteklerinin Meta'dan geldiği imza ile doğrulanamıyor. Meta Developer Portal > App Settings > Basic > App Secret değerini .env'e ekleyin.");
+}
 const GRAPH_API_URL = "https://graph.facebook.com/v19.0";
 
 const path = require("path");
@@ -20,10 +35,26 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
 app.use(cors());
-app.use(express.json());
+// Ham gövdeyi (rawBody) saklıyoruz: Meta'nın X-Hub-Signature-256 imzasını
+// doğrulamak için body'nin tam byte hali gerekiyor (JSON.parse sonrası kaybolur).
+app.use(express.json({
+  verify: (req, res, buf) => { req.rawBody = buf; }
+}));
 
 // Statik dosya servisi (index.html, style.css, app.js test simülatörü için)
 app.use(express.static(__dirname));
+
+// Herkese açık /api/chat demo endpoint'i gerçek OpenAI kotasını harcıyor;
+// kötüye kullanımı/faturayı şişirmeyi engellemek için IP başına sınır koyuyoruz.
+const chatLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Çok fazla istek gönderildi, lütfen birkaç dakika sonra tekrar deneyin." }
+});
+
+const MAX_MESSAGE_LENGTH = 1000;
 
 // ── 1. Ana Sayfa, Demo & Sağlık Kontrolü ──
 app.get("/", (req, res) => {
@@ -50,9 +81,10 @@ app.get("/status", (req, res) => {
         <p><span class="badge">CANLI & AKTİF</span></p>
         <div class="card">
           <p><strong>Webhook URL:</strong> <code>/webhook</code></p>
-          <p><strong>Doğrulama Jetonu:</strong> <code>${VERIFY_TOKEN}</code></p>
+          <p><strong>Doğrulama Jetonu:</strong> <code>${VERIFY_TOKEN.slice(0, 4)}${"•".repeat(Math.max(VERIFY_TOKEN.length - 4, 0))}</code></p>
           <p><strong>Yapay Zeka Motoru:</strong> OpenAI (${OPENAI_MODEL}) ${OPENAI_API_KEY ? "✅ AKTİF" : "⚠️ YEDEK MOD"}</p>
           <p><strong>Meta Token:</strong> ${PAGE_ACCESS_TOKEN ? "✅ YÜKLÜ" : "⚠️ EKSİK"}</p>
+          <p><strong>Webhook İmza Doğrulaması:</strong> ${META_APP_SECRET ? "✅ AKTİF" : "⚠️ EKSİK (META_APP_SECRET tanımlı değil)"}</p>
           <p><strong>Canlı Simülatör Arayüzü:</strong> <a href="/demo" style="color:#60a5fa;">/demo</a></p>
         </div>
       </body>
@@ -71,14 +103,20 @@ app.get("/health", (req, res) => {
 });
 
 // ── Test Simülatörü ve Ön Yüz için Doğrudan AI Chat Endpoint'i ──
-app.post("/api/chat", async (req, res) => {
+app.post("/api/chat", chatLimiter, async (req, res) => {
   const { message } = req.body;
-  if (!message) return res.status(400).json({ error: "Mesaj boş olamaz" });
+  if (!message || typeof message !== "string" || !message.trim()) {
+    return res.status(400).json({ error: "Mesaj boş olamaz" });
+  }
+  if (message.length > MAX_MESSAGE_LENGTH) {
+    return res.status(400).json({ error: `Mesaj en fazla ${MAX_MESSAGE_LENGTH} karakter olabilir.` });
+  }
   try {
     const reply = await generateSmartReply(message, "simulator");
     res.json({ reply });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("[/api/chat hatası]", err.message);
+    res.status(500).json({ error: "Yanıt üretilemedi, lütfen tekrar deneyin." });
   }
 });
 
@@ -256,8 +294,47 @@ async function replyInstagramComment(commentId, replyText) {
   }
 }
 
+// ── 6b. Meta Webhook İmza Doğrulaması (X-Hub-Signature-256) ──
+// Meta, her webhook isteğine App Secret ile hesaplanmış bir HMAC-SHA256 imzası ekler.
+// Bu doğrulama olmadan /webhook adresini bilen HERKES sahte "mesaj geldi" olayları
+// gönderip botu gerçek kullanıcılara DM/yorum yanıtı yolamaya, Meta Graph API
+// kotasını tüketmeye veya OpenAI faturasını şişirmeye zorlayabilir.
+function verifyMetaSignature(req, res, next) {
+  if (!META_APP_SECRET) {
+    // App Secret tanımlanmadıysa doğrulama atlanır (uyarı zaten başlangıçta basıldı).
+    return next();
+  }
+
+  const signatureHeader = req.get("x-hub-signature-256") || "";
+  const expectedPrefix = "sha256=";
+
+  if (!signatureHeader.startsWith(expectedPrefix) || !req.rawBody) {
+    console.error("[@otomasyon_ai] Webhook reddedildi: imza başlığı eksik/hatalı.");
+    return res.sendStatus(403);
+  }
+
+  const expectedSignature = crypto
+    .createHmac("sha256", META_APP_SECRET)
+    .update(req.rawBody)
+    .digest("hex");
+  const receivedSignature = signatureHeader.slice(expectedPrefix.length);
+
+  const expectedBuf = Buffer.from(expectedSignature, "hex");
+  const receivedBuf = Buffer.from(receivedSignature, "hex");
+
+  const isValid = expectedBuf.length === receivedBuf.length &&
+    crypto.timingSafeEqual(expectedBuf, receivedBuf);
+
+  if (!isValid) {
+    console.error("[@otomasyon_ai] Webhook reddedildi: imza eşleşmedi.");
+    return res.sendStatus(403);
+  }
+
+  next();
+}
+
 // ── 7. Meta Webhook Dinleyici (POST /webhook) ──
-app.post("/webhook", (req, res) => {
+app.post("/webhook", verifyMetaSignature, (req, res) => {
   const body = req.body;
 
   // Meta'ya bekletmeden 200 EVENT_RECEIVED dön (Meta zaman aşımını önler)
@@ -268,18 +345,22 @@ app.post("/webhook", (req, res) => {
       // 1. Gelen Instagram DM Mesajları
       if (entry.messaging) {
         entry.messaging.forEach(async (event) => {
-          if (event.message && event.message.text && !event.message.is_echo) {
-            const senderId = event.sender.id;
-            const messageText = event.message.text;
+          try {
+            if (event.message && event.message.text && !event.message.is_echo) {
+              const senderId = event.sender.id;
+              const messageText = event.message.text.slice(0, MAX_MESSAGE_LENGTH);
 
-            console.log(`[@otomasyon_ai Gelen DM] User ${senderId}: "${messageText}"`);
+              console.log(`[@otomasyon_ai Gelen DM] User ${senderId}: "${messageText}"`);
 
-            const aiReply = await generateSmartReply(messageText, "dm");
+              const aiReply = await generateSmartReply(messageText, "dm");
 
-            // Doğal insan yanıt zamanlaması (1 saniye)
-            setTimeout(() => {
-              sendInstagramMessage({ id: senderId }, aiReply);
-            }, 1000);
+              // Doğal insan yanıt zamanlaması (1 saniye)
+              setTimeout(() => {
+                sendInstagramMessage({ id: senderId }, aiReply);
+              }, 1000);
+            }
+          } catch (err) {
+            console.error("[@otomasyon_ai] DM işleme hatası:", err.message);
           }
         });
       }
@@ -287,23 +368,27 @@ app.post("/webhook", (req, res) => {
       // 2. Gelen Reels & Post Yorumları
       if (entry.changes) {
         entry.changes.forEach(async (change) => {
-          if (change.field === "comments") {
-            const commentVal = change.value;
-            const commentId = commentVal.id;
-            const commentText = commentVal.text;
+          try {
+            if (change.field === "comments") {
+              const commentVal = change.value;
+              const commentId = commentVal.id;
+              const commentText = (commentVal.text || "").slice(0, MAX_MESSAGE_LENGTH);
 
-            console.log(`[@otomasyon_ai Gelen Yorum] Comment ID ${commentId}: "${commentText}"`);
+              console.log(`[@otomasyon_ai Gelen Yorum] Comment ID ${commentId}: "${commentText}"`);
 
-            // 1. Adım: Yoruma herkese açık yanıt bırak
-            replyInstagramComment(commentId, "Harika! Detayları ve 1 ay ücretsiz deneme linkini DM kutunuza ilettik 🚀");
+              // 1. Adım: Yoruma herkese açık yanıt bırak
+              replyInstagramComment(commentId, "Harika! Detayları ve 1 ay ücretsiz deneme linkini DM kutunuza ilettik 🚀");
 
-            // 2. Adım: OpenAI ile akıllı DM yanıtı üret
-            const aiReply = await generateSmartReply(commentText, "comment");
+              // 2. Adım: OpenAI ile akıllı DM yanıtı üret
+              const aiReply = await generateSmartReply(commentText, "comment");
 
-            // 3. Adım: Meta Private Reply formatında (comment_id ile) DM gönder
-            setTimeout(() => {
-              sendInstagramMessage({ comment_id: commentId }, `Merhaba! Yorumunuz üzerine yazıyorum 👋\n\n${aiReply}`);
-            }, 1200);
+              // 3. Adım: Meta Private Reply formatında (comment_id ile) DM gönder
+              setTimeout(() => {
+                sendInstagramMessage({ comment_id: commentId }, `Merhaba! Yorumunuz üzerine yazıyorum 👋\n\n${aiReply}`);
+              }, 1200);
+            }
+          } catch (err) {
+            console.error("[@otomasyon_ai] Yorum işleme hatası:", err.message);
           }
         });
       }
