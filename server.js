@@ -81,7 +81,7 @@ app.get("/status", (req, res) => {
         <p><span class="badge">CANLI & AKTİF</span></p>
         <div class="card">
           <p><strong>Webhook URL:</strong> <code>/webhook</code></p>
-          <p><strong>Doğrulama Jetonu:</strong> <code>${VERIFY_TOKEN.slice(0, 4)}${"•".repeat(Math.max(VERIFY_TOKEN.length - 4, 0))}</code></p>
+          <p><strong>Doğrulama Jetonu:</strong> ${process.env.VERIFY_TOKEN ? "✅ YAPILANDIRILDI" : "⚠️ GEÇİCİ (rastgele üretildi)"}</p>
           <p><strong>Yapay Zeka Motoru:</strong> OpenAI (${OPENAI_MODEL}) ${OPENAI_API_KEY ? "✅ AKTİF" : "⚠️ YEDEK MOD"}</p>
           <p><strong>Meta Token:</strong> ${PAGE_ACCESS_TOKEN ? "✅ YÜKLÜ" : "⚠️ EKSİK"}</p>
           <p><strong>Webhook İmza Doğrulaması:</strong> ${META_APP_SECRET ? "✅ AKTİF" : "⚠️ EKSİK (META_APP_SECRET tanımlı değil)"}</p>
@@ -301,7 +301,15 @@ async function replyInstagramComment(commentId, replyText) {
 // kotasını tüketmeye veya OpenAI faturasını şişirmeye zorlayabilir.
 function verifyMetaSignature(req, res, next) {
   if (!META_APP_SECRET) {
-    // App Secret tanımlanmadıysa doğrulama atlanır (uyarı zaten başlangıçta basıldı).
+    if (PAGE_ACCESS_TOKEN) {
+      // Canlı bir PAGE_ACCESS_TOKEN tanımlıysa sunucu gerçek DM/yorum gönderimi yapıyor
+      // demektir. Bu durumda imza doğrulamasını atlamak, webhook URL'sini bilen HERKESİN
+      // sahte olay gönderip gerçek kullanıcılara mesaj yolatmasına ve Graph API/OpenAI
+      // kotasını tüketmesine izin verir; bu yüzden canlı modda isteği reddediyoruz.
+      console.error("[@otomasyon_ai] Webhook reddedildi: PAGE_ACCESS_TOKEN tanımlı ama META_APP_SECRET eksik — canlı ortamda imza doğrulaması zorunludur.");
+      return res.sendStatus(503);
+    }
+    // Gerçek token yokken (yerel/deneme modu, gönderimler zaten simüle ediliyor) doğrulama atlanır.
     return next();
   }
 
