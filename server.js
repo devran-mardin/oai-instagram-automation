@@ -218,7 +218,14 @@ function sanitizeForInstagram(text) {
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/__([^_]+)__/g, "$1")
     // tek yıldızla italik *metin* -> metin (linkler içindeki "*" ile karışmasın diye URL'siz satırlarda çalışır)
-    .replace(/(?<![\w*])\*([^*\n]+)\*(?![\w*])/g, "$1");
+    .replace(/(?<![\w*])\*([^*\n]+)\*(?![\w*])/g, "$1")
+    // "(https://url)" -> https://url  (LLM linki markdown olmadan da düz parantez içine sarabiliyor;
+    // URL'ye bitişik açılış/kapanış parantezi bazı mobil istemcilerde linki tanımayı bozuyor)
+    .replace(/\((https?:\/\/[^\s)]+)\)/g, "$1")
+    // URL'ye bitişik kalan cümle sonu noktalamasını (nokta, virgül, ünlem vb.) temizle;
+    // link hemen ardından boşluk/satır sonu geliyorsa bu işaretler zaten sadece süslemedir,
+    // URL'ye yapışık kalmaları bazı mobil istemcilerde linki tanımayı bozabiliyor
+    .replace(/(https?:\/\/\S+?)[)\].,;:!?]+(?=\s|$)/g, "$1");
 }
 
 // ── 4. OpenAI Destekli Akıllı Yanıt Motoru (LLM Engine) ──
@@ -254,7 +261,7 @@ GÖREVİN VE KURALLARIN:
 6. Müşteri genel bilgi istediğinde, web sitemizi sorduğunda veya şirketimizi/hizmetlerimizi daha detaylı incelemek istediğinde web sitesi linkimizi (${kb.brand.website}) mutlaka paylaş.
 7. Asla hayali bilgi, farklı telefon numarası, farklı web sitesi adresi veya listede olmayan fiyat uydurma.
 8. Eğer soru çok belirsiz veya genel bir selamlaşmaysa ("selam", "merhaba"), samimi bir karşılık verip 1 ay ücretsiz deneme ile işletmesine nasıl otomasyon kurabileceğimizi özetle.
-9. ASLA Markdown formatı kullanma. Instagram DM ve yorumları Markdown render etmez; "[WhatsApp](https://wa.me/...)" gibi köşeli parantezli link formatı veya "**kalın**" yazı telefonlarda tıklanamayan/bozuk görünür. Linkleri HER ZAMAN düz metin olarak, olduğu gibi yaz (Örn: doğru → "https://wa.me/905530551369", yanlış → "[WhatsApp](https://wa.me/905530551369)").`;
+9. ASLA Markdown formatı kullanma. Instagram DM ve yorumları Markdown render etmez; "[WhatsApp](https://wa.me/...)" gibi köşeli parantezli link formatı veya "**kalın**" yazı telefonlarda tıklanamayan/bozuk görünür. Linki ASLA parantez içine alma ve hemen ardına nokta/virgül gibi bir noktalama işareti koyma; linkten önce veya sonra mutlaka boşluk/satır sonu bırak (Örn: doğru → "https://wa.me/905530551369" veya "WhatsApp: https://wa.me/905530551369", yanlış → "[WhatsApp](https://wa.me/905530551369)" veya "(https://wa.me/905530551369).").`;
 
 
   try {
