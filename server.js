@@ -202,11 +202,30 @@ function generateKeywordReply(userText) {
     `Bize WhatsApp'tan anında ulaşabilirsiniz: https://wa.me/905530551369?text=Merhaba,%20otomasyon%20bilgisi%20almak%20istiyorum.`;
 }
 
+// ── 3b. Instagram İçin Yanıt Temizleme (Markdown Ayıklama) ──
+// Instagram DM/yorumları Markdown render ETMEZ. OpenAI zaman zaman talimatlara
+// rağmen "[WhatsApp](https://...)" gibi Markdown link veya **kalın** yazı üretebiliyor.
+// Bu durumda masaüstü Instagram Web bazen parantez içindeki ham URL'yi kendi
+// algısıyla yine de linkler, ama mobil uygulama linki tanımayıp tıklanamaz düz
+// metin olarak gösteriyor. Göndermeden önce Markdown'ı ayıklayıp platform
+// fark etmeksizin tıklanabilir, sade bir URL bırakıyoruz.
+function sanitizeForInstagram(text) {
+  if (!text) return text;
+  return text
+    // [Etiket](https://url) -> https://url  (etiket yerine sade linki bırak, Instagram otomatik tıklanabilir yapar)
+    .replace(/\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g, "$2")
+    // **kalın** / __kalın__ -> kalın
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    // tek yıldızla italik *metin* -> metin (linkler içindeki "*" ile karışmasın diye URL'siz satırlarda çalışır)
+    .replace(/(?<![\w*])\*([^*\n]+)\*(?![\w*])/g, "$1");
+}
+
 // ── 4. OpenAI Destekli Akıllı Yanıt Motoru (LLM Engine) ──
 async function generateSmartReply(userText, context = "dm") {
   if (!OPENAI_API_KEY) {
     console.log("[@otomasyon_ai] OpenAI anahtarı yok, kural motoruna yönlendirildi.");
-    return generateKeywordReply(userText);
+    return sanitizeForInstagram(generateKeywordReply(userText));
   }
 
   const kb = websiteKnowledge;
@@ -234,7 +253,8 @@ GÖREVİN VE KURALLARIN:
 5. Müşteriyi her zaman 1 Ay Ücretsiz Deneme fırsatımıza veya WhatsApp hattımıza yönlendir (WhatsApp linki: https://wa.me/905530551369).
 6. Müşteri genel bilgi istediğinde, web sitemizi sorduğunda veya şirketimizi/hizmetlerimizi daha detaylı incelemek istediğinde web sitesi linkimizi (${kb.brand.website}) mutlaka paylaş.
 7. Asla hayali bilgi, farklı telefon numarası, farklı web sitesi adresi veya listede olmayan fiyat uydurma.
-8. Eğer soru çok belirsiz veya genel bir selamlaşmaysa ("selam", "merhaba"), samimi bir karşılık verip 1 ay ücretsiz deneme ile işletmesine nasıl otomasyon kurabileceğimizi özetle.`;
+8. Eğer soru çok belirsiz veya genel bir selamlaşmaysa ("selam", "merhaba"), samimi bir karşılık verip 1 ay ücretsiz deneme ile işletmesine nasıl otomasyon kurabileceğimizi özetle.
+9. ASLA Markdown formatı kullanma. Instagram DM ve yorumları Markdown render etmez; "[WhatsApp](https://wa.me/...)" gibi köşeli parantezli link formatı veya "**kalın**" yazı telefonlarda tıklanamayan/bozuk görünür. Linkleri HER ZAMAN düz metin olarak, olduğu gibi yaz (Örn: doğru → "https://wa.me/905530551369", yanlış → "[WhatsApp](https://wa.me/905530551369)").`;
 
 
   try {
@@ -261,13 +281,13 @@ GÖREVİN VE KURALLARIN:
     const reply = response.data.choices?.[0]?.message?.content?.trim();
     if (reply) {
       console.log("[@otomasyon_ai] OpenAI yanıtı başarıyla üretildi.");
-      return reply;
+      return sanitizeForInstagram(reply);
     }
-    return generateKeywordReply(userText);
+    return sanitizeForInstagram(generateKeywordReply(userText));
   } catch (error) {
     console.error("[@otomasyon_ai] OpenAI API Hatası:", error.response ? error.response.data : error.message);
     console.log("[@otomasyon_ai] Kural motoruna fallback yapılıyor...");
-    return generateKeywordReply(userText);
+    return sanitizeForInstagram(generateKeywordReply(userText));
   }
 }
 
