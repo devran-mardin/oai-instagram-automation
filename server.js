@@ -28,7 +28,10 @@ const META_APP_SECRET = process.env.META_APP_SECRET || "";
 if (!META_APP_SECRET) {
   console.warn("[UYARI] META_APP_SECRET tanımlı değil, gelen webhook isteklerinin Meta'dan geldiği imza ile doğrulanamıyor. Meta Developer Portal > App Settings > Basic > App Secret değerini .env'e ekleyin.");
 }
-const GRAPH_API_URL = "https://graph.facebook.com/v19.0";
+// Instagram girişiyle API kurulumu (Instagram Business Login) token'ları (IGAA...)
+// sadece graph.instagram.com üzerinden kabul edilir; klasik graph.facebook.com
+// bu token tipini "Cannot parse access token" hatasıyla reddeder.
+const GRAPH_API_URL = "https://graph.instagram.com/v21.0";
 
 const path = require("path");
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
