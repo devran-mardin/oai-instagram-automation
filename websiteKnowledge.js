@@ -6,7 +6,7 @@
 const WEBSITE_KNOWLEDGE_BASE = {
   brand: {
     name: "OtomasyonAI",
-    website: "https://otomasyonmarketi.netai",
+    website: "https://otomasyonmarketi.net",
     location: "Antalya, Türkiye",
     whatsapp: "0553 055 13 69",
     whatsappLink: "https://wa.me/905530551369",

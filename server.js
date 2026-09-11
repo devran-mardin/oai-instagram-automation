@@ -147,7 +147,11 @@ function generateKeywordReply(userText) {
   const text = (userText || "").toLowerCase().trim();
   const kb = websiteKnowledge;
 
-  if (text.includes("reels") || text.includes("yorum") || text.includes("link")) {
+  // NOT: "yorum" için basit includes() kullanılırsa "istiyorum", "alıyorum" gibi
+  // "-yorum" ile biten sıradan fiillerin içindeki "yorum" parçası yanlışlıkla eşleşir
+  // (ör. "bilgi almak istiyorum" yanlışlıkla Reels/yorum bloğuna düşerdi). Bu yüzden
+  // "yorum" kelimesi yalnızca bir sözcüğün BAŞINDA geçiyorsa eşleşsin diye \b kullanıyoruz.
+  if (text.includes("reels") || /\byorum/.test(text) || text.includes("link")) {
     return `Merhaba! 👋 Reels paylaşımımıza ilginiz için teşekkürler.\n\n` +
       `İşletmeniz için 7/24 Instagram Auto-DM & Yorum otomasyon paketimiz ₺2.490 /aylıktır.\n` +
       `🎁 1 Ay ÜCRETSİZ Deneme Fırsatıyla canlı test edebilirsiniz!\n\n` +
@@ -181,12 +185,20 @@ function generateKeywordReply(userText) {
     return `📍 OtomasyonAI İletişim Bilgileri:\n` +
       `• Merkezimiz: Antalya, Türkiye\n` +
       `• WhatsApp: 0553 055 13 69\n` +
-      `• E-Posta: platform@otomasyonmarketi.net\n\n` +
+      `• E-Posta: platform@otomasyonmarketi.net\n` +
+      `• Web Sitemiz: ${kb.brand.website}\n\n` +
       `İletişime Geçin: https://wa.me/905530551369`;
+  }
+
+  if (text.includes("site") || text.includes("web") || text.includes("bilgi")) {
+    return `🌐 OtomasyonAI Web Sitemiz:\n${kb.brand.website}\n\n` +
+      `Tüm paketlerimizi, özellikleri ve referanslarımızı web sitemizden detaylıca inceleyebilirsiniz.\n\n` +
+      `🎁 1 Ay ÜCRETSİZ Deneme Kampanyası için WhatsApp hattımız: ${kb.brand.whatsappLink}`;
   }
 
   return `Merhaba! 👋 Ben @otomasyon_ai yapay zeka asistanıyım.\n\n` +
     `OtomasyonAI çözümlerimiz (WhatsApp, Instagram, Randevu, E-Posta, B2B Lead Scraping) hakkında detaylı bilgi ve 1 Ay ÜCRETSİZ Deneme fırsatı sunuyoruz.\n\n` +
+    `🌐 Web Sitemiz: ${kb.brand.website}\n` +
     `Bize WhatsApp'tan anında ulaşabilirsiniz: https://wa.me/905530551369?text=Merhaba,%20otomasyon%20bilgisi%20almak%20istiyorum.`;
 }
 
@@ -206,6 +218,7 @@ Slogan: ${kb.brand.slogan}
 Merkez: ${kb.brand.location}
 WhatsApp Hattı: ${kb.brand.whatsapp} (Link: ${kb.brand.whatsappLink})
 E-posta: ${kb.brand.email}
+Web Sitesi: ${kb.brand.website}
 
 KAMPANYA:
 - 1 Ay Ücretsiz Deneme Kampanyası: 30 gün boyunca hiçbir ücret ödemeden kurulum ve canlı deneme hakkı var. Taahhüt, cayma bedeli yok.
@@ -219,8 +232,9 @@ GÖREVİN VE KURALLARIN:
 3. Uygun emojiler (🚀, 👋, 📊, 💬 vb.) kullan.
 4. Müşteriler Reels, gönderi yorumu veya DM ile ilgili soru sorduğunda, bunun "Instagram Auto-DM & Yorum Yanıtlayıcı" paketimiz (₺2.490 /aylık) olduğunu, Reels yorumlarını anında beğendiğini, yorum atanlara özel teklif DM'si ilettiğini ve DM sorularını yanıtladığını belirt.
 5. Müşteriyi her zaman 1 Ay Ücretsiz Deneme fırsatımıza veya WhatsApp hattımıza yönlendir (WhatsApp linki: https://wa.me/905530551369).
-6. Asla hayali bilgi, farklı telefon numarası veya listede olmayan fiyat uydurma.
-7. Eğer soru çok belirsiz veya genel bir selamlaşmaysa ("selam", "merhaba"), samimi bir karşılık verip 1 ay ücretsiz deneme ile işletmesine nasıl otomasyon kurabileceğimizi özetle.`;
+6. Müşteri genel bilgi istediğinde, web sitemizi sorduğunda veya şirketimizi/hizmetlerimizi daha detaylı incelemek istediğinde web sitesi linkimizi (${kb.brand.website}) mutlaka paylaş.
+7. Asla hayali bilgi, farklı telefon numarası, farklı web sitesi adresi veya listede olmayan fiyat uydurma.
+8. Eğer soru çok belirsiz veya genel bir selamlaşmaysa ("selam", "merhaba"), samimi bir karşılık verip 1 ay ücretsiz deneme ile işletmesine nasıl otomasyon kurabileceğimizi özetle.`;
 
 
   try {
