@@ -394,9 +394,25 @@ app.post("/webhook", verifyMetaSignature, (req, res) => {
               setTimeout(() => {
                 sendInstagramMessage({ comment_id: commentId }, `Merhaba! Yorumunuz üzerine yazıyorum 👋\n\n${aiReply}`);
               }, 1200);
+            } else if (change.field === "messages") {
+              // Instagram girişiyle API kurulumu (Instagram Business Login) DM'leri
+              // entry.messaging yerine entry.changes + field:"messages" ile gelir.
+              const msgVal = change.value;
+              const senderId = msgVal.sender?.id;
+              const messageText = (msgVal.message?.text || "").slice(0, MAX_MESSAGE_LENGTH);
+
+              if (senderId && messageText && !msgVal.message?.is_echo) {
+                console.log(`[@otomasyon_ai Gelen DM] User ${senderId}: "${messageText}"`);
+
+                const aiReply = await generateSmartReply(messageText, "dm");
+
+                setTimeout(() => {
+                  sendInstagramMessage({ id: senderId }, aiReply);
+                }, 1000);
+              }
             }
           } catch (err) {
-            console.error("[@otomasyon_ai] Yorum işleme hatası:", err.message);
+            console.error("[@otomasyon_ai] Yorum/DM işleme hatası:", err.message);
           }
         });
       }
